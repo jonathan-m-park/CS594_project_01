@@ -76,10 +76,12 @@ void
 dg_handler(int sockfd, struct sockaddr * pcli_addr, 
 	   socklen_t clilen, char *pathname){
     int rc;
+    int i;
+    int num_dgs;
     socklen_t len = clilen;
     /* the following is a test.  */
     FILE *file;
-    char *buffer;
+    char **datagrams;
     char res[MAX_DGRAM_LEN];
     unsigned long fileLen;
 
@@ -96,32 +98,51 @@ dg_handler(int sockfd, struct sockaddr * pcli_addr,
     fileLen=ftell(file);
     fseek(file, 0, SEEK_SET);
 
+    num_dgs = (fileLen / MAX_DATA_LEN);
+    if (fileLen % MAX_DATA_LEN)
+      num_dgs += 1;
+
 	//Allocate memory
-    buffer=(char *)malloc(fileLen+4);
-    if (!buffer){
+    datagrams = (char **) malloc (num_dgs * (MAX_DGRAM_LEN));
+    if (!datagrams){
 	fprintf(stderr, "Memory error!");                        
 	fclose(file);
 	return;
     }
 
-	//Read file contents into buffer
-    fread(buffer + 3, fileLen, 1, file);
+    for (i = 0; i < num_dgs; i++){
+      datagrams[i] = (char *) malloc (MAX_DGRAM_LEN);
+      if (!datagrams[i]){
+	printf("Memory Error!");
+	fclose(file);
+	return;
+      }
+    }
+    
+    //Read file contents into buffer
+    for (i = 0; i < num_dgs; i++){
+      fread((datagrams[i]) + 2, MAX_DATA_LEN, 1, file /*+ (MAX_DATA_LEN * i)*/);
+    }
     fclose(file);
-    buffer[0] = dg_type_arry[DG_DATA];
-    buffer[1] = '0';
-    buffer[2] = '0';
-    printf("%s\n", buffer);
-    rc = sendto(sockfd, buffer, fileLen + 4/* sizeof(buffer) + 1 */, 0, pcli_addr, len);
-    if (rc < 0)
-       perror("sendto() failed. Will try again.");
-    printf("Number of bytes sent: %d\n", rc);
-    printf("Size of buffer: %lu\n", sizeof(buffer));
-    rc = recvfrom(sockfd, res, MAX_DGRAM_LEN, 0, pcli_addr, &len);
-    if (rc < 0)
+    for (i = 0; i <num_dgs; i++){
+      (datagrams[i])[0] = dg_type_arry[DG_DATA];
+      (datagrams[i])[1] = (i%2)+'0';
+      printf("%s\n", datagrams[i]);
+      rc = sendto(sockfd, datagrams[i], MAX_DGRAM_LEN + 1, 0, pcli_addr, len);
+      if (rc < 0)
+	perror("sendto() failed. Will try again.");
+      printf("Number of bytes sent: %d\n", rc);
+      /*rc = recvfrom(sockfd, res, MAX_DGRAM_LEN + 1, 0, pcli_addr, &len);
+      if (rc < 0)
 	perror("Did not receive ACK\n");
-    if (res[0] == dg_type_arry[DG_ACK])
-	close_cli(sockfd, pcli_addr, len);
-    free(buffer);
+      if (res[0] == dg_type_arry[DG_ACK])
+	close_cli(sockfd, pcli_addr, len);*/
+    }
+    close_cli(sockfd, pcli_addr, len);
+    for (i = 0; datagrams[i]; i++){
+      free(datagrams[i]);
+    }
+    free(datagrams);
 }
 
 void

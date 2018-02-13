@@ -70,7 +70,6 @@ main(int argc, char **argv)
     rc = recvfrom(serv_sock, res, MAX_DGRAM_LEN + 1, 0, (struct sockaddr *) &serv_addr,
                 (socklen_t *) &serv_addr_size);
 
-    printf("%s\n", res);
     if(rc < 0){
       err("recvfrom() failed.\n");
       break;
@@ -87,13 +86,14 @@ main(int argc, char **argv)
       /* testing.  */
       FILE *f;
 
-      f = fopen("myfile.txt", "w"); /* removed wb for testing */
+      f = fopen("myfile.txt", "ab"); /* removed wb for testing */
       if(!f)
 	err("File could not be made.\n");
 
       printf("%s\n", res);
       fwrite(res + 3, 1, rc, f);
 
+      /*
       ack_msg[1] = res[1];
 
       last_seq = res[1];
@@ -101,11 +101,11 @@ main(int argc, char **argv)
       rc = sendto(serv_sock, ack_msg, MAX_DGRAM_LEN, 0, (struct sockaddr *) &serv_addr,
 		  (socklen_t) serv_addr_size);
 
-      /*   rc = sendto(serv_sock, ack_msg, MAX_DGRAM_LEN, 0, (struct sockaddr *) & serv_addr,
+       rc = sendto(serv_sock, ack_msg, MAX_DGRAM_LEN, 0, (struct sockaddr *) & serv_addr,
 	  (socklen_t) serv_addr_size); */
       // write_file("myfile.txt", res);
-      if(rc < 0)
-        err("sendto() failed.\n");
+    /*  if(rc < 0)
+        err("sendto() failed.\n");*/
     }
   } while(res[0] != dg_type_arry[DG_CLOSE]);
 

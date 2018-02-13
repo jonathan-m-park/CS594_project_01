@@ -17,6 +17,7 @@
 #include <sys/socket.h> /* for socket functions   */
 #include <sys/types.h>  /* for socketlen_t  */
 #include <stdlib.h>     /* for exit()  */
+#include <time.h>
 #include "packet.h" 
 
 void serv_handshake(int, struct sockaddr *, socklen_t);
@@ -48,6 +49,8 @@ main(int argc, char **argv){
   serv_addr.sin_addr.s_addr = htonl(INADDR_ANY); 
   /* INADDR_ANY used to accept traffic from any IP address.  */
 
+//  setsockopt(cli_sock, SOL_SOCKET, SO_RCVTIMEO, (char *) &tv, sizeof(struct timeval));
+
   /* The newly created socket is bound to the server address and the return 
    * code is tested for error.  */
   rc = bind(cli_sock, (struct sockaddr *) &serv_addr, sizeof(serv_addr));
@@ -78,12 +81,20 @@ dg_handler(int sockfd, struct sockaddr * pcli_addr,
     int rc;
     int i;
     int num_dgs;
+    char expected_seq = '0';
     socklen_t len = clilen;
     /* the following is a test.  */
     FILE *file;
     char **datagrams;
     char res[MAX_DGRAM_LEN];
     unsigned long fileLen;
+    struct timeval tv;
+
+
+    /* Set timer option for socket.  */
+    tv.tv_sec   = 5;
+    tv.tv_usec  = 0;
+    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *) &tv, sizeof(struct timeval));
 
     printf("Requested file: %s\n", pathname);
 	//Open file
@@ -125,18 +136,23 @@ dg_handler(int sockfd, struct sockaddr * pcli_addr,
     }
     fclose(file);
     for (i = 0; i <num_dgs; i++){
+      expected_seq = i % 2 + '0';
       (datagrams[i])[0] = dg_type_arry[DG_DATA];
       (datagrams[i])[1] = (i%2)+'0';
-      printf("%s\n", datagrams[i]);
       rc = sendto(sockfd, datagrams[i], MAX_DGRAM_LEN + 1, 0, pcli_addr, len);
       if (rc < 0)
 	perror("sendto() failed. Will try again.");
-      printf("Number of bytes sent: %d\n", rc);
-      /*rc = recvfrom(sockfd, res, MAX_DGRAM_LEN + 1, 0, pcli_addr, &len);
-      if (rc < 0)
-	perror("Did not receive ACK\n");
-      if (res[0] == dg_type_arry[DG_ACK])
-	close_cli(sockfd, pcli_addr, len);*/
+      
+      rc = recvfrom(sockfd, res, MAX_DGRAM_LEN + 1, 0, pcli_addr, &len);
+      if (rc > 0 && res[1] == expected_seq && res[0] == dg_type_arry[DG_ACK]){
+	printf("ACK%c recieved.", expected_seq);
+	expected_seq = (i + 1) % 2 + '0';
+	printf("Sending PCK%c\n", expected_seq);
+      }
+      else{
+	printf("ACK%c not received. Retransmitting PCK%c\n", expected_seq, expected_seq);
+	i--;
+      }
     }
     close_cli(sockfd, pcli_addr, len);
     for (i = 0; datagrams[i]; i++){
@@ -182,7 +198,7 @@ serv_handshake(int sockfd, struct sockaddr *paddr, socklen_t addr_len)
 	}
     }while(handshake);
 
-    dg_handler(sockfd, paddr, addr_len, pathname);
+   dg_handler(sockfd, paddr, addr_len, pathname);
 }
 
 void

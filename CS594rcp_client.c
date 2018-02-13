@@ -43,6 +43,13 @@ main(int argc, char **argv)
   serv_ip = argv[1];
   port = atoi(argv[2]);
 
+  /* testing.  */
+  FILE *f;
+
+  f = fopen("myfile.txt", "ab"); /* removed wb for testing */
+  if(!f)
+    err("File could not be made.\n");
+
   /* Create a  UDP socket.  */
   serv_sock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
   if(serv_sock < 0)
@@ -76,36 +83,24 @@ main(int argc, char **argv)
     }
     if(res[0] == dg_type_arry[DG_CLOSE])
       break;
-    /* else if(res[1] == last_seq){ //if duplicate
+    /*else if(res[1] == last_seq){ //if duplicate
+      printf("Duplicate PKT, resending ACK%c\n", last_seq);
       ack_msg[1] = last_seq;
       rc = sendto(serv_sock, ack_msg, MAX_DGRAM_LEN, 0, (struct sockaddr *) &serv_addr,
 	      	  (socklen_t) serv_addr_size);
-    } */
+    }*/
     else{
-      
-      /* testing.  */
-      FILE *f;
+      printf("SEQ:%d\n", res[1]);
+      if (res[1] != last_seq)
+        fwrite(res + 2, 1, rc, f);
 
-      f = fopen("myfile.txt", "ab"); /* removed wb for testing */
-      if(!f)
-	err("File could not be made.\n");
-
-      printf("%s\n", res);
-      fwrite(res + 3, 1, rc, f);
-
-      /*
       ack_msg[1] = res[1];
-
       last_seq = res[1];
 
       rc = sendto(serv_sock, ack_msg, MAX_DGRAM_LEN, 0, (struct sockaddr *) &serv_addr,
 		  (socklen_t) serv_addr_size);
-
-       rc = sendto(serv_sock, ack_msg, MAX_DGRAM_LEN, 0, (struct sockaddr *) & serv_addr,
-	  (socklen_t) serv_addr_size); */
-      // write_file("myfile.txt", res);
-    /*  if(rc < 0)
-        err("sendto() failed.\n");*/
+      if(rc < 0)
+        err("sendto() failed.\n");
     }
   } while(res[0] != dg_type_arry[DG_CLOSE]);
 

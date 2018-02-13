@@ -17,10 +17,11 @@
 #include <sys/socket.h> /* for socket functions   */
 #include <sys/types.h>  /* for socketlen_t  */
 #include <stdlib.h>     /* for exit()  */
+#include "packet.h" 
 
-#define MAXBUFFERSIZE 256
-
-void dg_handler(int, struct sockaddr *, socklen_t);
+void serv_handshake(int, struct sockaddr *, socklen_t);
+void dg_handler(int, struct sockaddr *, socklen_t, char *);
+void close_cli(int, struct sockaddr *, socklen_t);
 
 int 
 main(int argc, char **argv){
@@ -55,9 +56,9 @@ main(int argc, char **argv){
       exit(1);
   }
 
-  /* The dg_handler() function is used to perform the server's work.   */
-  dg_handler(cli_sock, (struct sockaddr *) &cli_addr, sizeof(cli_addr));
-
+  while(1){
+      serv_handshake(cli_sock, (struct sockaddr *) &cli_addr, sizeof(cli_addr));
+  }
   return 0;
 }
 
@@ -72,22 +73,105 @@ main(int argc, char **argv){
  * address data structure to send and receive data, and the length of 
  * the client address structure.  */
 void
-dg_handler(int sockfd, struct sockaddr * pcli_addr, socklen_t clilen){
-    int n, rc;
-    socklen_t len;
-    char msg[MAXBUFFERSIZE];
-    char res[MAXBUFFERSIZE] = "Hello.\n";
+dg_handler(int sockfd, struct sockaddr * pcli_addr, 
+	   socklen_t clilen, char *pathname){
+    int rc;
+    socklen_t len = clilen;
+    /* the following is a test.  */
+    FILE *file;
+    char *buffer;
+    char res[MAX_DGRAM_LEN];
+    unsigned long fileLen;
 
-    while(1){
-	len = clilen;
-	n = recvfrom(sockfd, msg, MAXBUFFERSIZE, 0, pcli_addr, &len);
-	if(n < 0)
-	    perror("recvfrom() failed. Please try again.\n");
-
-	rc = sendto(sockfd, res, sizeof(res), 0, pcli_addr, len);
-	if(rc < 0)
-	    perror("sendto() failed. Will try again.\n");
+    printf("Requested file: %s\n", pathname);
+	//Open file
+    file = fopen(pathname, "rb");
+    if (!file){
+	fprintf(stderr, "Unable to open file %s", pathname);
+	return;
     }
+	
+	//Get file length
+    fseek(file, 0, SEEK_END);
+    fileLen=ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+	//Allocate memory
+    buffer=(char *)malloc(fileLen+4);
+    if (!buffer){
+	fprintf(stderr, "Memory error!");                        
+	fclose(file);
+	return;
+    }
+
+	//Read file contents into buffer
+    fread(buffer + 3, fileLen, 1, file);
+    fclose(file);
+    buffer[0] = dg_type_arry[DG_DATA];
+    buffer[1] = '0';
+    buffer[2] = '0';
+    printf("%s\n", buffer);
+    rc = sendto(sockfd, buffer, fileLen + 4/* sizeof(buffer) + 1 */, 0, pcli_addr, len);
+    if (rc < 0)
+       perror("sendto() failed. Will try again.");
+    printf("Number of bytes sent: %d\n", rc);
+    printf("Size of buffer: %lu\n", sizeof(buffer));
+    rc = recvfrom(sockfd, res, MAX_DGRAM_LEN, 0, pcli_addr, &len);
+    if (rc < 0)
+	perror("Did not receive ACK\n");
+    if (res[0] == dg_type_arry[DG_ACK])
+	close_cli(sockfd, pcli_addr, len);
+    free(buffer);
 }
 
+void
+serv_handshake(int sockfd, struct sockaddr *paddr, socklen_t addr_len)
+{
+    int n;
+    char msg1[MAX_DGRAM_LEN];
+    char msg2[MAX_DGRAM_LEN];
+    char pathname[MAX_DATA_LEN];
+    int handshake = 1;
 
+    msg2[0] = dg_type_arry[DG_HELLO];
+    do{
+    n = recvfrom(sockfd, msg1, MAX_DGRAM_LEN, 0, paddr, &addr_len);
+    if(n < 0){
+	perror("No handshake receieved.\n");
+        //break;
+    }
+    if(msg1[0] != dg_type_arry[DG_HELLO]){
+	perror("Handshake not established yet.\n");
+	//break;
+    }
+    else{
+	n = sendto(sockfd, msg2, MAX_DGRAM_LEN, 0, paddr, addr_len);
+	if(n < 0){
+	    perror("Unable to send handshake.\n");
+	    //break;
+	}
+	bzero(msg1, sizeof(msg1));
+	n = recvfrom(sockfd, msg1, MAX_DGRAM_LEN, 0, paddr, &addr_len);
+	if(n < 0){
+	    perror("No path name sent.\n");
+	    //break;
+	}
+	strncpy(pathname, msg1 + 3, sizeof(pathname)); /* + 3 to skip header.  */
+	handshake = 0;
+	}
+    }while(handshake);
+
+    dg_handler(sockfd, paddr, addr_len, pathname);
+}
+
+void
+close_cli(int sockfd, struct sockaddr * paddr, socklen_t addr_len)
+{
+    int rc;
+    char close_msg[MAX_DGRAM_LEN];
+    close_msg[0] = dg_type_arry[DG_CLOSE];
+
+    rc = sendto(sockfd, close_msg, MAX_DGRAM_LEN, 0, paddr, addr_len);
+    if(rc < 0)
+	perror("Unable to send close message.\n");
+}

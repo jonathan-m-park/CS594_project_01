@@ -89,7 +89,7 @@ main(int argc, char **argv)
       printf("SEQ:%d\n", res[1]);
       /* if the receieved data is not a duplicate, write it to the file.  */
       if (res[1] != last_seq) 
-        fwrite(res + 2, 1, rc, f);
+        fwrite(res + 2, MAX_DATA_LEN, 1, f);
 
       /* Prepare the contents of the ack message to match the 
          last received PKT.  */
